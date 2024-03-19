@@ -1,0 +1,339 @@
+---
+title: "differential expression"
+output: html_document
+date: "2024-03-12"
+---
+
+```{r}
+library(tidyverse)
+
+# read preprocessed data
+file <- 'combined_data.csv'
+df <- read.csv(file) %>%
+  mutate(Cell.Type = ifelse(is.na(Cell.Type), "PBMCs", Cell.Type))
+
+meta_df <- df[, 1:4]
+```
+
+
+PBMC ANALYSIS
+
+```{r}
+library(edgeR)
+
+# filter df for specific values in columns
+filterDf <- function(df, col, value) {
+  
+  filtered_df <- df %>%
+    filter(if (length(value) == 1) str_detect(.data[[col]], value) else .data[[col]] %in% value) %>% # filter for values
+    select(names(.)[colSums(is.na(.)) == 0]) # keep columns with no NaNs
+  return(filtered_df)
+}
+
+# get expression matrix
+getExpMatrix <- function(df) {
+  exp_matrix <- as.matrix(df[, 5:ncol(df)])
+  return(t(exp_matrix))
+}
+
+# conduct Wilcoxon rank sum test to determine DEGs
+deg_wilcoxon <- function(exp_matrix, conditions) {
+
+  dge_matrix <- DGEList(counts=exp_matrix,group=conditions)
+  
+  # Remove rows consistently have zero or very low counts
+  keep <- filterByExpr(dge_matrix)
+  dge_matrix <- dge_matrix[keep, keep.lib.sizes=FALSE]
+  
+  # Perform TMM normalization and transfer to CPM (Counts Per Million)
+  dge_matrix <- calcNormFactors(dge_matrix, method="TMM")
+  count_norm <- as.data.frame(cpm(dge_matrix))
+  
+  # Perform Wilcoxon-Rank sum test
+  p_values <- sapply(1:nrow(count_norm), function(i) {
+     data<-cbind.data.frame(gene=as.numeric(t(count_norm[i,])),conditions)
+     p=wilcox.test(gene~conditions, data)$p.value
+     return(p)
+    }
+  )
+  
+  # Correct p-value for false discovery rate
+  fdr <- p.adjust(p_values,method = "fdr")
+  
+  # Get Log2FC values
+  conditions_level <- levels(conditions)
+  data_ra <- count_norm[,c(which(conditions == conditions_level[conditions_level != "Healthy"]))]
+  data_healthy <- count_norm[,c(which(conditions == conditions_level[conditions_level == "Healthy"]))]
+  fold_changes <- log2(rowMeans(data_ra) / rowMeans(data_healthy))
+  
+  # get DEG dataframe
+  fdrThres=0.05
+  degs <- data.frame(log2foldChange = fold_changes, pValues = p_values, FDR = fdr) %>%
+    mutate(gene_id = rownames(count_norm)) %>%
+    na.omit() %>%
+    filter(FDR < fdrThres) %>%
+    arrange(desc(log2foldChange))
+  rownames(degs) <- degs$gene_id
+  degs <- degs[, -which(names(degs) == "gene_id")]
+
+  return(degs)
+}
+
+```
+
+
+```{r}
+# Test out functions for RA - PBMC
+ra_pbmc_df <- filterDf(df, "GSE", "GSE110169") %>%
+  filterDf(., "Condition", c("Healthy", "RA"))
+
+ra_pbmc_exp_matrix <- getExpMatrix(ra_pbmc_df)
+ra_pbmc_conditions <- as.factor(t(ra_pbmc_df$Condition))
+
+# threshold degs for |log2FC| > 0.1
+ra_pbmc_degs <- deg_wilcoxon(ra_pbmc_exp_matrix, ra_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+
+# show degs df
+ra_pbmc_degs
+
+# store degs in list
+ra_pbmc_list <- rownames(ra_pbmc_degs)
+```
+
+
+```{r}
+# repeat for SJS - PBMC
+sjs_pbmc_df <- filterDf(df, "GSE", "GSE51092")
+
+sjs_pbmc_exp_matrix <- getExpMatrix(sjs_pbmc_df)
+sjs_pbmc_conditions <- as.factor(t(sjs_pbmc_df$Condition))
+
+sjs_pbmc_degs <- deg_wilcoxon(sjs_pbmc_exp_matrix, sjs_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sjs_pbmc_degs
+
+sjs_pbmc_list <- rownames(sjs_pbmc_degs)
+```
+
+
+```{r}
+# repeat for SLE - PBMC
+sle_pbmc_df <- filterDf(df, "GSE", "GSE110169") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs
+
+sle_pbmc_list1 <- rownames(sle_pbmc_degs)
+```
+
+
+```{r}
+# repeat for another study of SLE - PBMC 
+sle_pbmc_df <- filterDf(df, "GSE", "GSE110174") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs2 <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs2
+
+sle_pbmc_list2 <- rownames(sle_pbmc_degs2)
+```
+
+
+```{r}
+# repeat for another study of SLE - PBMC 
+sle_pbmc_df <- filterDf(df, "GSE", "GSE11907") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs3 <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs3
+
+sle_pbmc_list3 <- rownames(sle_pbmc_degs3)
+```
+
+
+```{r}
+# repeat for another study of SLE - PBMC 
+sle_pbmc_df <- filterDf(df, "GSE", "GSE24706") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs4 <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs4
+
+sle_pbmc_list4 <- rownames(sle_pbmc_degs4)
+```
+
+
+```{r}
+# repeat for another study of SLE - PBMC 
+sle_pbmc_df <- filterDf(df, "GSE", "GSE50772") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs5 <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs5
+
+sle_pbmc_list5 <- rownames(sle_pbmc_degs5)
+```
+
+
+```{r}
+# repeat for SLE - PBMC - another study
+sle_pbmc_df <- filterDf(df, "GSE", "GSE82221") %>%
+  filterDf(., "Condition", c("Healthy", "SLE"))
+
+sle_pbmc_exp_matrix <- getExpMatrix(sle_pbmc_df)
+sle_pbmc_conditions <- as.factor(t(sle_pbmc_df$Condition))
+
+sle_pbmc_degs6 <- deg_wilcoxon(sle_pbmc_exp_matrix, sle_pbmc_conditions) %>%
+  filter(log2foldChange > 0.1 | log2foldChange < -0.1 )
+sle_pbmc_degs6
+
+sle_pbmc_list6 <- rownames(sle_pbmc_degs6)
+```
+
+
+CLUSTERING ON DEGS
+```{r}
+plotPCA <- function(df, exp_matrix, label) {
+  log_exp_matrix <- log2(exp_matrix + 1e-8)
+  pca_result <- prcomp(log_exp_matrix, scale. = TRUE)
+
+  # Extract the first two principal components
+  pca_2d <- as.data.frame(pca_result$x[, 1:2])
+  pca_2d[[label]] <- df[[label]]
+  
+  p <- ggplot(pca_2d, aes(x = PC1, y = PC2, color = !!ensym(label))) +
+    geom_point()
+  
+  return(p)
+  
+}
+
+filterStudies <- function(df, condition) {
+  studies_with_condition <- df %>%
+    filter(Condition == condition) %>%
+    pull(GSE)
+  
+  filtered_df <- df %>%
+    filter((Condition == condition | Condition == "Healthy") &
+         (GSE %in% studies_with_condition)) %>%
+    select(names(.)[colSums(is.na(.)) == 0])
+}
+
+getExpMatrix <- function(df) {
+  exp_matrix <- as.matrix(df[, 5:ncol(df)])
+  return(exp_matrix)
+}
+
+# combine all DEGs from all SLE PBMC studies 
+genes <- Reduce(union, list(sle_pbmc_list1, sle_pbmc_list2, sle_pbmc_list3, sle_pbmc_list4,
+                sle_pbmc_list5, sle_pbmc_list6))
+
+# get subset of SLE dataframe with only DEGs
+sle_df <- filterStudies(df, "SLE")
+keep_cols <- c(names(sle_df)[1:4], names(sle_df)[names(sle_df) %in% genes])
+sle_df_subset <- sle_df[, keep_cols]
+
+# Prepare data for TMM normalization
+subset_matrix <- getExpMatrix(sle_df_subset)
+conditions <- as.factor(t(sle_df_subset$Condition))
+dge_matrix <- DGEList(counts=t(subset_matrix),group=conditions)
+
+# Perform TMM normalization and transfer to CPM (Counts Per Million)
+dge_matrix <- calcNormFactors(dge_matrix, method="TMM")
+count_norm <- t(as.matrix(cpm(dge_matrix)))
+
+# rename columns
+names(sle_df_subset)[names(sle_df_subset) == "GSE"] <- "Study"
+names(sle_df_subset)[names(sle_df_subset) == "Cell.Type"] <- "Cell Type"
+
+# create plots
+plot1 <- plotPCA(sle_df_subset, count_norm, "Study")
+plot2 <- plotPCA(sle_df_subset, count_norm, "Condition")
+plot3 <- plotPCA(sle_df_subset, count_norm, "Cell Type")
+
+sle_df_subset
+```
+
+
+```{r, fig.height=6, fig.width=5}
+library(patchwork)
+
+# get all plots on same figure
+plot <- plot1 / plot2 / plot3 + plot_layout(heights = unit(c(7, 7, 7), 'cm')) +
+  plot_annotation(title = 'PCA Plots for SLE (Lupus)', tag_levels = list(c('D', 'E', 'F')))
+plot
+ggsave('SLE_DEG_PCA.png')
+
+```
+
+
+PATHWAY ENRICHMENT ANALYSIS
+```{r}
+library(pathfindR)
+
+# Perform PEA using Reactome gene sets and Biogrid protein interaction networks
+pathwayEnrichment <- function(df, gene_set="Reactome", pin="Biogrid") {
+
+  input <- df[, !names(df) %in% c("pValues")] %>%
+    cbind(Gene.Symbol = rownames(.), .)
+  rownames(input) <- NULL
+  
+  output <- run_pathfindR(input, gene_sets=gene_set, list_active_snw_genes = T)
+  
+  clustered <- cluster_enriched_terms(output)
+  enrichment_chart(clustered, plot_by_cluster=T)
+  
+  visualize_terms(
+    result_df = output,
+    hsa_KEGG = FALSE,
+    pin_name_path = pin,
+    show_legend=FALSE
+  )
+  
+  return(list(output, clustered))
+  
+}
+
+# perform PEA on SLE DEGs from first experiment
+sle_output <- pathwayEnrichment(sle_pbmc_degs1)
+enrichment_chart(sle_output[[2]], plot_by_cluster=T)
+```
+
+
+```{r}
+# repeat PEA on SjS DEGs (only taking top 30 DEGs or too much noise in result)
+sjs_pbmc_degs_subset <- rbind(head(sjs_pbmc_degs, 29), tail(sjs_pbmc_degs, 1))
+sjs_output <- pathwayEnrichment(sjs_pbmc_degs_subset)
+enrichment_chart(sjs_output[[2]], plot_by_cluster=T)
+```
+
+
+```{r}
+# repeat PEA on RA DEGs
+ra_output <- pathwayEnrichment(ra_pbmc_degs)
+enrichment_chart(ra_output[[2]], plot_by_cluster=T)
+```
+
+

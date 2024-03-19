@@ -1,0 +1,63 @@
+---
+title: "ADEx"
+output: html_document
+date: "2024-02-25"
+---
+
+```{r}
+library(tidyverse)
+
+# List all GSE files in the directory
+gse_files <- list.files(pattern = "^GSE.*\\.tsv$")
+gse_files
+```
+
+
+```{r}
+# Read metadata.tsv
+metadata <- read.delim("metadata.tsv", stringsAsFactors = FALSE) %>%
+  select(Sample, GSE, Condition, Cell.Type)
+
+metadata
+```
+
+
+
+```{r}
+
+expression = data.frame()
+
+# Loop through each GSE TSV file and merge the data
+for (file in gse_files) {
+  # Read the TSV file
+  df <- file %>%
+    read.delim(stringsAsFactors = FALSE) %>%
+    t() %>%
+    as.data.frame() %>%
+    rownames_to_column() %>%
+    setNames(c("Sample", .[1, -1])) %>%
+    slice(-1) %>%
+    mutate(across(-Sample, as.numeric))
+  
+  # Concatenate data
+  expression <- bind_rows(expression, df)
+}
+expression
+```
+
+
+```{r}
+# combine metadata and expression
+data <- left_join(metadata, expression, by="Sample")
+
+# Write the combined data to a new CSV file
+write.csv(data, "combined_data.tsv", row.names=FALSE)
+
+# Show data
+data
+```
+
+
+
+
+

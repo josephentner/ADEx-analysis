@@ -1,0 +1,202 @@
+---
+title: "ADEx"
+output: html_document
+date: "2024-02-26"
+---
+
+
+```{r}
+library(tidyverse)
+
+file <- 'combined_data.csv'
+df <- read.csv(file) %>%
+  mutate(Cell.Type = ifelse(is.na(Cell.Type), "PBMCs", Cell.Type))
+
+meta_df <- df[, 1:4]
+```
+
+
+```{r}
+# Filter for T-cells and genes with no NA
+
+filterDf <- function(df, col, value) {
+  filtered_df <- df %>%
+    filter(if (length(value) == 1) str_detect(.data[[col]], value) else .data[[col]] %in% value) %>%
+    select(names(.)[colSums(is.na(.)) == 0])
+  
+  return(filtered_df)
+}
+
+t_df <- filterDf(df, "Cell.Type", "T cells")
+t_df
+```
+
+
+```{r}
+library(ggplot2)
+
+getExpMatrix <- function(df) {
+  exp_matrix <- as.matrix(df[, 5:ncol(df)])
+  return(exp_matrix)
+}
+
+plotPCA <- function(df, exp_matrix, label, title) {
+  log_exp_matrix <- log2(exp_matrix + 1e-8)
+  pca_result <- prcomp(log_exp_matrix, scale. = TRUE)
+
+  # Extract the first two principal components
+  pca_2d <- as.data.frame(pca_result$x[, 1:2])
+  pca_2d[[label]] <- df[[label]]
+  
+  p <- ggplot(pca_2d, aes(x = PC1, y = PC2, color = !!ensym(label))) +
+    geom_point() +
+    labs(title = title,
+         x = "Principal Component 1",
+         y = "Principal Component 2")
+  
+  return(p)
+  
+}
+
+t_matrix = getExpMatrix(t_df)
+plotPCA(t_df, t_matrix, "Condition", "PCA across conditions in T Cells")
+
+```
+
+
+```{r}
+library(umap)
+
+plotUMAP <- function(df, exp_matrix, label, title) {
+  umap_result <- umap(exp_matrix)
+  
+  umap_df <- as.data.frame(umap_result$layout)
+  umap_df[[label]] <- df[[label]]
+  
+  # Create a ggplot scatter plot
+  ggplot(umap_df, aes(x = V1, y = V2, color = !!ensym(label))) +
+    geom_point() +
+    labs(title = title, x = "UMAP Dimension 1", y = "UMAP Dimension 2") +
+    theme_minimal()
+}
+
+plotUMAP(t_df, t_matrix, "Condition", "UMAP across conditions in T cells")
+```
+
+
+```{r}
+ra_df <- filterDf(df, "Condition", "RA")
+ra_matrix <- getExpMatrix(ra_df)
+plotPCA(ra_df, ra_matrix, "GSE", "PCA across studies for RA")
+```
+
+
+```{r}
+GSEs <- c("GSE56649", "GSE65010")
+ra_t_df <- filterDf(df, "GSE", c("GSE56649", "GSE65010"))
+ra_t_df
+```
+
+
+```{r}
+ra_t_matrix <- getExpMatrix(ra_t_df)
+plotPCA(ra_t_df, ra_t_matrix, "Condition", "PCA in RA for T cells")
+```
+
+
+```{r}
+plotUMAP(ra_t_df, ra_t_matrix, "Condition", "UMAP in RA for T cells")
+```
+
+
+```{r}
+# get studies for healthy/disease for specific condition
+filterStudies <- function(df, condition) {
+  studies_with_condition <- df %>%
+    filter(Condition == condition) %>%
+    pull(GSE)
+  
+  filtered_df <- df %>%
+    filter((Condition == condition | Condition == "Healthy") &
+         (GSE %in% studies_with_condition)) %>%
+    select(names(.)[colSums(is.na(.)) == 0])
+}
+
+ra_df <- filterStudies(df, "RA")
+dim(ra_df)
+ra_matrix <- getExpMatrix(ra_df)
+plotPCA(ra_df, ra_matrix, "GSE", "PCA across studies for RA")
+```
+```{r}
+sle_df <- filterStudies(df, "SLE")
+dim(sle_df)
+sle_matrix <- getExpMatrix(sle_df)
+
+names(sle_df)[names(sle_df) == "GSE"] <- "Study"
+names(sle_df)[names(sle_df) == "Cell.Type"] <- "Cell Type"
+
+plotPCA <- function(df, exp_matrix, label) {
+  log_exp_matrix <- log2(exp_matrix + 1e-8)
+  pca_result <- prcomp(log_exp_matrix, scale. = TRUE)
+
+  # Extract the first two principal components
+  pca_2d <- as.data.frame(pca_result$x[, 1:2])
+  pca_2d[[label]] <- df[[label]]
+  
+  p <- ggplot(pca_2d, aes(x = PC1, y = PC2, color = !!ensym(label))) +
+    geom_point()
+  
+  return(p)
+  
+}
+
+# Create 3 plots
+plot1 <- plotPCA(sle_df, sle_matrix, "Study")
+plot2 <- plotPCA(sle_df, sle_matrix, "Condition")
+plot3 <- plotPCA(sle_df, sle_matrix, "Cell Type")
+```
+
+
+```{r, fig.height=6, fig.width=5}
+library(patchwork)
+
+plot <- plot1 / plot2 / plot3 + plot_layout(heights = unit(c(7, 7, 7), 'cm')) +
+  plot_annotation(title = 'PCA Plots for SLE (Lupus)', tag_levels='A')
+plot
+ggsave('SLE_PCA.png')
+
+```
+
+
+```{r}
+plotPCA(sle_df, sle_matrix, "GSE", "PCA for SLE colored by study")
+```
+
+
+```{r}
+plotPCA(sle_df, sle_matrix, "Cell.Type", "PCA for SLE colored by cell type")
+```
+
+
+```{r}
+ssc_df <- filterStudies(df, "SSc")
+dim(ssc_df)
+ssc_matrix <- getExpMatrix(ssc_df)
+plotPCA(ssc_df, ssc_matrix, "GSE", "PCA across studies for SSc")
+```
+
+
+```{r}
+sjs_df <- filterStudies(df, "SjS")
+dim(sjs_df)
+sjs_matrix <- getExpMatrix(sjs_df)
+plotPCA(sjs_df, sjs_matrix, "GSE", "PCA across studies for SjS")
+```
+```{r}
+pbmc_df <- filterDf(df, "Cell.Type", "PBMCs")
+pbmc_df
+pbmc_matrix <- getExpMatrix(pbmc_df)
+plotPCA(pbmc_df, pbmc_matrix, "GSE", "PCA across studies for SjS")
+```
+
+
